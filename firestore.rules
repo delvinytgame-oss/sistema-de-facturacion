@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- FUNCIONES DE UTILIDAD ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(path) ? get(path).data : {};
+    }
+
+    function isGlobalAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'delvinyt.game@gmail.com' || 
+        getUserData().get('email', '') == 'delvinyt.game@gmail.com'
+      );
+    }
+
+    function isActiveUser() {
+      let user = getUserData();
+      return isSignedIn() && (
+        isGlobalAdmin() || 
+        (user.get('isBlocked', false) == false && user.get('subscriptionStatus', 'active') == 'active')
+      );
+    }
+
+    function belongsToCompany(companyId) {
+      return isSignedIn() && getUserData().companyId == companyId;
+    }
+
+    function isEmployeeOwner() {
+      return isSignedIn() && resource.data.creadoPor == request.auth.uid;
+    }
+
+    function isNewEmployeeOwner() {
+      return isSignedIn() && request.resource.data.creadoPor == request.auth.uid;
+    }
+
+    // --- REGLAS POR COLECCIÓN ---
+
+    // Usuarios (Nueva estructura): Solo el dueño puede leer/escribir su propio documento
+    match /usuarios/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Usuarios: Solo el dueño o el admin global pueden leer/escribir
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isGlobalAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isGlobalAdmin());
+      allow delete: if isGlobalAdmin();
+
+      // Permitir acceso a sub-colecciones de cualquier profundidad (como profile, inventario, ventas, etc)
+      match /{allPaths=**} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    // Empresas: Solo miembros activos o admin global
+    match /companies/{companyId} {
+      allow read: if isSignedIn() && (belongsToCompany(companyId) || isGlobalAdmin());
+      allow create: if isSignedIn();
+      allow update: if isActiveUser() && (belongsToCompany(companyId) || isGlobalAdmin());
+    }
+
+    // Facturas, Productos, Clientes, etc: Filtrado por companyId
+    match /invoices/{invoiceId} {
+      allow read: if isSignedIn() && (belongsToCompany(resource.data.companyId) || isGlobalAdmin());
+      allow write: if isActiveUser() && (belongsToCompany(request.resource.data.companyId) || isGlobalAdmin());
+    }
+
+    match /products/{productId} {
+      allow read: if isSignedIn() && (belongsToCompany(resource.data.companyId) || isGlobalAdmin());
+      allow write: if isActiveUser() && (belongsToCompany(request.resource.data.companyId) || isGlobalAdmin());
+    }
+
+    match /customers/{customerId} {
+      allow read: if isSignedIn() && (belongsToCompany(resource.data.companyId) || isGlobalAdmin());
+      allow write: if isActiveUser() && (belongsToCompany(request.resource.data.companyId) || isGlobalAdmin());
+    }
+
+    match /empleados/{empleadoId} {
+      allow read: if isSignedIn() && (isEmployeeOwner() || belongsToCompany(resource.data.companyId) || isGlobalAdmin());
+      allow create: if isSignedIn() && (
+        isNewEmployeeOwner() ||
+        (isActiveUser() && belongsToCompany(request.resource.data.companyId)) ||
+        isGlobalAdmin()
+      );
+      allow update: if isSignedIn() && (
+        (
+          isEmployeeOwner() &&
+          isNewEmployeeOwner()
+        ) ||
+        (
+          isActiveUser() &&
+          belongsToCompany(resource.data.companyId) &&
+          belongsToCompany(request.resource.data.companyId)
+        ) ||
+        isGlobalAdmin()
+      );
+      allow delete: if isSignedIn() && (isEmployeeOwner() || (isActiveUser() && belongsToCompany(resource.data.companyId)) || isGlobalAdmin());
+    }
+
+    match /invoiceItems/{itemId} {
+      allow read: if isSignedIn() && (belongsToCompany(resource.data.companyId) || isGlobalAdmin());
+      allow write: if isActiveUser() && (belongsToCompany(request.resource.data.companyId) || isGlobalAdmin());
+    }
+
+    // Otras colecciones
+    match /devices/{deviceId} {
+      allow read, write: if isActiveUser() && (belongsToCompany(resource.data.companyId) || belongsToCompany(request.resource.data.companyId) || isGlobalAdmin());
+    }
+
+    match /workSessions/{sessionId} {
+      allow read, write: if isSignedIn() && (resource.data.userId == request.auth.uid || isGlobalAdmin());
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isSignedIn() && (belongsToCompany(resource.data.companyId) || isGlobalAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isGlobalAdmin();
+    }
+
+    // Denegar acceso a colecciones antiguas o no especificadas
+    match /{document=**} {
+      allow read, write: if isGlobalAdmin();
+    }
+  }
+}
