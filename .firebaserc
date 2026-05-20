@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "vituna-90382"
+  },
+  "targets": {
+    "vituna-90382": {
+      "hosting": {
+        "main": [
+          "default"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

@@ -1,0 +1,9 @@
+{
+  "name": "sistema-facturacion",
+  "version": "1.0.0",
+  "description": "Directorio raiz del proyecto recuperado",
+  "scripts": {
+    "dev": "node dev-runner.cjs",
+    "start": "iniciar_tienda.bat"
+  }
+}
