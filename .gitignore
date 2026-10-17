@@ -8,3 +8,6 @@ dist/
 bin/
 obj/
 build/
+.env.*
+!.env.example
+auth-users.json
